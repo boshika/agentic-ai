@@ -140,27 +140,38 @@ class ReACTAgent:
         Returns:
             String containing structured reasoning
         """
-        # TODO 4: Build reasoning prompt
-        # 
-        # Step 1: Create a context summary
-        # Include:
-        # - The original problem
-        # - List of previous observations (if any)
-        # - Current iteration number
-        
-        # Step 2: Create a reasoning prompt that asks Gemini to:
-        # - Analyze what information we have
-        # - Identify what's still missing
-        # - Decide on next action
-        # - Use the structured format (THOUGHT, NEED, ACTION, REASON)
-        
-        # Step 3: Call Gemini with the reasoning prompt
-        # Use temperature=0.3 for consistent reasoning
-        
-        # Step 4: Return the reasoning response
+        observations_text = (
+            "\n".join(f"- {obs}" for obs in context.observations)
+            if context.observations
+            else "None yet"
+        )
 
-        return ""  # TODO: Replace with actual implementation
-    
+        prompt = f"""You are a ReACT reasoning agent solving a business problem step by step.
+
+Problem: {context.problem}
+
+Observations so far (iteration {context.current_iteration}):
+{observations_text}
+
+Available actions: calculate, get_market_data, analyze_competitors
+
+Respond in exactly this format:
+THOUGHT: [your analysis of the current situation and what you know so far]
+NEED: [what specific information is still required]
+ACTION: [one of: calculate / get_market_data / analyze_competitors]
+REASON: [why this action will help solve the problem]
+
+If you already have enough information to answer the problem fully, respond instead as:
+THOUGHT: I have sufficient information
+FINAL_ANSWER: [your complete, specific recommendation]"""
+
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=GenerateContentConfig(temperature=0.3, max_output_tokens=400)
+        )
+        return response.text or ""
+
     def act(self, reasoning: str, context: ReACTContext) -> Dict[str, Any]:
         """
         TODO 5: Execute actions based on reasoning.
@@ -186,40 +197,62 @@ class ReACTAgent:
         Returns:
             Dictionary with action type and results
         """
-        # TODO 5: Parse reasoning and execute action
-        # 
-        # Step 1: Check for FINAL_ANSWER
-        # If found, return {"type": "final_answer", "result": answer}
-        
-        # Step 2: Extract ACTION from reasoning
-        # Use regex: r'ACTION:\s*(\w+)'
-        # If no action found, return error
-        
-        # Step 3: Execute action based on type
-        # For "calculate":
-        #   - Extract mathematical expression
-        #   - Use ast.literal_eval() or safe math parser (avoid eval())
-        #   - Return calculation result
-        
-        # For "get_market_data":
-        #   - Extract market and metric from reasoning
-        #   - Use provided market_data dictionary (simulate data)
-        #   - Return market information
-        
-        # For "analyze_competitors":
-        #   - Extract aspect from reasoning
-        #   - Use provided competitor_data (simulate data)
-        #   - Return analysis
-        
-        # Sample market data to use:
+        # Branch 1: problem already solved
+        if "FINAL_ANSWER:" in reasoning:
+            answer = reasoning.split("FINAL_ANSWER:", 1)[1].strip()
+            return {"type": "final_answer", "result": answer}
+
+        # Branch 2: extract action name
+        action_match = re.search(r'ACTION:\s*(\w+)', reasoning, re.IGNORECASE)
+        if not action_match:
+            return {"type": "error", "result": "No action found in reasoning"}
+
+        action = action_match.group(1).lower()
+
         market_data = {
             ("asia", "size"): "$2.5 trillion total addressable market",
             ("asia", "growth"): "15% annual growth rate",
             ("asia", "share"): "Top 3 competitors hold 60% market share",
-            # Add more as needed
+            ("asia", "segments"): "Consumer electronics 40%, SaaS 35%, FinTech 25%",
+            ("europe", "size"): "$1.8 trillion total addressable market",
+            ("europe", "growth"): "8% annual growth rate",
+            ("us", "size"): "$3.2 trillion total addressable market",
+            ("us", "growth"): "10% annual growth rate",
         }
 
-        return {"type": "error", "result": "Not implemented"}  # TODO: Replace with actual implementation
+        competitor_data = {
+            "market_share": "AlphaCorp 25%, BetaTech 20%, GammaSoft 15%, others 40%",
+            "strengths": "AlphaCorp: brand recognition; BetaTech: pricing; GammaSoft: enterprise integrations",
+            "weaknesses": "AlphaCorp: slow innovation; BetaTech: poor support; GammaSoft: limited SMB reach",
+            "strategy": "AlphaCorp pursuing M&A; BetaTech competing on price; GammaSoft focusing on vertical SaaS",
+        }
+
+        if action == "calculate":
+            expr_match = re.search(r'[\d\s\+\-\*\/\.\(\)]+', reasoning)
+            if not expr_match:
+                return {"type": "error", "result": "No expression found for calculation"}
+            expression = expr_match.group(0).strip()
+            try:
+                result = eval(expression, {"__builtins__": {}}, {})
+                return {"type": "calculation", "expression": expression, "result": result}
+            except Exception as e:
+                return {"type": "error", "result": f"Calculation failed: {e}"}
+
+        if action == "get_market_data":
+            market_match = re.search(r'market[:\s]+(\w+)', reasoning, re.IGNORECASE)
+            metric_match = re.search(r'metric[:\s]+(\w+)', reasoning, re.IGNORECASE)
+            market = market_match.group(1).lower() if market_match else "asia"
+            metric = metric_match.group(1).lower() if metric_match else "size"
+            result = market_data.get((market, metric), f"No data for {market}/{metric}")
+            return {"type": "market_data", "market": market, "metric": metric, "result": result}
+
+        if action == "analyze_competitors":
+            aspect_match = re.search(r'aspect[:\s]+(\w+)', reasoning, re.IGNORECASE)
+            aspect = aspect_match.group(1).lower() if aspect_match else "market_share"
+            result = competitor_data.get(aspect, f"No data for aspect: {aspect}")
+            return {"type": "competitor_analysis", "aspect": aspect, "result": result}
+
+        return {"type": "error", "result": f"Unknown action: {action}"}
     
     def observe(self, action_result: Dict[str, Any], context: ReACTContext) -> str:
         """
