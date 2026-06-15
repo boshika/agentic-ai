@@ -277,34 +277,38 @@ FINAL_ANSWER: [your complete, specific recommendation]"""
         Returns:
             Formatted observation string
         """
-        # TODO 6: Process results into observations
-        # 
-        # Step 1: Check action type and format observation
-        # For "final_answer":
-        #   - Set context.is_complete = True
-        #   - Set context.final_answer
-        #   - Return "Final answer determined: ..."
-        
-        # For "calculation":
-        #   - Format: "Calculation result: [expression] = [result]"
-        
-        # For "market_data":
-        #   - Format: "Market data ([market] - [metric]): [result]"
-        
-        # For "competitor_analysis":
-        #   - Format: "Competitor analysis ([aspect]): [result]"
-        
-        # For "error":
-        #   - Format: "Error occurred: [message]"
-        
-        # Step 2: Check iteration limit
-        # If context.current_iteration >= MAX_ITERATIONS - 1:
-        #   - Set context.is_complete = True
-        #   - Add "(Max iterations reached)" to observation
-        
-        # Step 3: Return formatted observation
+        action_type = action_result.get("type")
+        result = action_result.get("result", "")
 
-        return ""  # TODO: Replace with actual implementation
+        if action_type == "final_answer":
+            context.is_complete = True
+            context.final_answer = result
+            observation = f"Final answer determined: {result}"
+
+        elif action_type == "calculation":
+            expression = action_result.get("expression", "")
+            observation = f"Calculation result: {expression} = {result}"
+
+        elif action_type == "market_data":
+            market = action_result.get("market", "")
+            metric = action_result.get("metric", "")
+            observation = f"Market data ({market} - {metric}): {result}"
+
+        elif action_type == "competitor_analysis":
+            aspect = action_result.get("aspect", "")
+            observation = f"Competitor analysis ({aspect}): {result}"
+
+        elif action_type == "error":
+            observation = f"Error occurred: {result}"
+
+        else:
+            observation = f"Unknown action result: {action_type}"
+
+        if context.current_iteration >= self.MAX_ITERATIONS - 1 and not context.is_complete:
+            context.is_complete = True
+            observation += " (Max iterations reached)"
+
+        return observation
     
     def solve(self, problem: str) -> str:
         """
