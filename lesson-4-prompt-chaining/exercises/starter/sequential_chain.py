@@ -160,45 +160,52 @@ class SequentialChain:
         Returns:
             ChainResult with execution results and metrics
         """
-        # TODO 1: Implement chain step execution
-        #
-        # Step 1: Initialize chain execution
-        # start_time = time.time()
-        # context = ChainContext(initial_input=initial_prompt)
-        # step_results = []
-        
-        # Step 2: Execute each step in sequence
-        # for i, step in enumerate(steps):
-        #     # Execute step with current context
-        #     step_result = self._execute_step_with_retry(step, context)
-        #     step_results.append(step_result)
-        #     
-        #     # Check if step failed
-        #     if not step_result.success:
-        #         # Return failed chain result
-        #         
-        #     # Validate step quality
-        #     if step_result.quality_score < step.quality_threshold:
-        #         # Attempt quality recovery or fail
-        #         
-        #     # Update context for next step
-        #     context = self._update_context_flow(context, step_result)
-        
-        # Step 3: Calculate final metrics and return result
-        # overall_quality = statistics.mean([result.quality_score for result in step_results])
-        # total_execution_time = time.time() - start_time
-        # final_output = self._synthesize_final_output(step_results, context)
-        # 
-        # return ChainResult(...)
-        
+        start_time = time.time()
+        context = ChainContext(initial_input=initial_prompt)
+        step_results = []
+
+        for step in steps:
+            step_result = self._execute_step_with_retry(step, context)
+            step_results.append(step_result)
+
+            if not step_result.success:
+                return ChainResult(
+                    success=False,
+                    final_output="",
+                    context=context,
+                    overall_quality=0.0,
+                    total_execution_time=time.time() - start_time,
+                    total_token_usage=context.token_usage,
+                    step_results=step_results,
+                    error_summary=f"Step '{step.name}' failed: {step_result.error_message}"
+                )
+
+            if step_result.quality_score < step.quality_threshold:
+                return ChainResult(
+                    success=False,
+                    final_output="",
+                    context=context,
+                    overall_quality=step_result.quality_score,
+                    total_execution_time=time.time() - start_time,
+                    total_token_usage=context.token_usage,
+                    step_results=step_results,
+                    error_summary=f"Step '{step.name}' quality {step_result.quality_score:.2f} below threshold {step.quality_threshold}"
+                )
+
+            context = self._update_context_flow(context, step_result)
+
+        overall_quality = statistics.mean([r.quality_score for r in step_results])
+        total_execution_time = time.time() - start_time
+        final_output = self._synthesize_final_output(step_results, context)
+
         return ChainResult(
-            success=False,
-            final_output="",
-            context=ChainContext(initial_prompt),
-            overall_quality=0.0,
-            total_execution_time=0.0,
-            total_token_usage={},
-            step_results=[]
+            success=True,
+            final_output=final_output,
+            context=context,
+            overall_quality=overall_quality,
+            total_execution_time=total_execution_time,
+            total_token_usage=context.token_usage,
+            step_results=step_results
         )
     
     def _execute_step_with_retry(self, step: ChainStep, context: ChainContext) -> StepResult:
@@ -308,32 +315,27 @@ class SequentialChain:
         Returns:
             Complete prompt string for step execution
         """
-        # TODO 2: Implement context flow management
-        #
-        # Step 1: Build context summary
-        # context_summary = self._build_context_summary(context, step)
-        
-        # Step 2: Add retry instructions if needed
-        # retry_instructions = ""
-        # if attempt > 0:
-        #     retry_instructions = f"RETRY ATTEMPT {attempt + 1}: ..."
-        
-        # Step 3: Create full prompt with context
-        # full_prompt = f"""{step.prompt_template}
-        # 
-        # {retry_instructions}
-        # 
-        # CONTEXT FROM PREVIOUS STEPS:
-        # {context_summary}
-        # 
-        # CURRENT TASK FOCUS: {step.name}
-        # Expected Step Type: {step.step_type.value}
-        # 
-        # Please provide your {step.step_type.value} response:"""
-        #
-        # return full_prompt
+        context_summary = self._build_context_summary(context, step)
 
-        return ""  # Replace with your implementation
+        retry_instructions = (
+            f"RETRY ATTEMPT {attempt + 1}: Previous response did not meet quality "
+            "standards. Please provide a more thorough and structured response."
+            if attempt > 0 else ""
+        )
+
+        full_prompt = f"""{step.prompt_template}
+
+{retry_instructions}
+
+CONTEXT FROM PREVIOUS STEPS:
+{context_summary}
+
+CURRENT TASK FOCUS: {step.name}
+Expected Step Type: {step.step_type.value}
+
+Please provide your {step.step_type.value} response:"""
+
+        return full_prompt
     
     def _build_context_summary(self, context: ChainContext, current_step: ChainStep) -> str:
         """Build intelligent context summary for current step."""
@@ -373,33 +375,21 @@ class SequentialChain:
         Returns:
             Updated ChainContext object
         """
-        # TODO 2: Implement context flow updates
-        #
-        # Step 1: Add step to history
-        # context.step_history.append({
-        #     "step_name": step_result.step_name,
-        #     "quality_score": step_result.quality_score,
-        #     "execution_time": step_result.execution_time,
-        #     "key_insights": step_result.key_insights,
-        #     "content_summary": step_result.content[:200] + "..."
-        # })
-        
-        # Step 2: Update accumulated insights
-        # context.accumulated_insights.extend(step_result.key_insights)
-        
-        # Step 3: Update quality tracking
-        # context.quality_scores.append(step_result.quality_score)
-        
-        # Step 4: Update token usage
-        # context.token_usage["total_input"] += step_result.token_usage["input_tokens"]
-        # context.token_usage["total_output"] += step_result.token_usage["output_tokens"]
-        
-        # Step 5: Update current focus
-        # context.current_focus = f"Completed {step_result.step_name} with quality {step_result.quality_score:.2f}"
+        context.step_history.append({
+            "step_name": step_result.step_name,
+            "quality_score": step_result.quality_score,
+            "execution_time": step_result.execution_time,
+            "key_insights": step_result.key_insights,
+            "content_summary": step_result.content[:200] + "..."
+        })
 
-        # return context
+        context.accumulated_insights.extend(step_result.key_insights)
+        context.quality_scores.append(step_result.quality_score)
+        context.token_usage["total_input"] += step_result.token_usage["input_tokens"]
+        context.token_usage["total_output"] += step_result.token_usage["output_tokens"]
+        context.current_focus = f"Completed {step_result.step_name} with quality {step_result.quality_score:.2f}"
 
-        return context  # Replace with your implementation
+        return context
     
     def _validate_step_result(self, content: str, step: ChainStep, context: ChainContext) -> float:
         """
@@ -431,57 +421,67 @@ class SequentialChain:
         Returns:
             Quality score between 0.0 and 1.0
         """
-        # TODO 3: Implement comprehensive quality validation
-        #
-        # Step 1: Calculate base metrics
-        # word_count = len(content.split())
-        # quality_score = 0.0
-        
-        # Step 2: Content length validation (25% of score)
-        # if word_count >= 100:
-        #     quality_score += 0.25
-        # elif word_count >= 50:
-        #     quality_score += 0.15
-        
-        # Step 3: Structure and organization (25% of score)
-        # structure_score = self._assess_content_structure(content, step.step_type)
-        # quality_score += structure_score * 0.25
-        
-        # Step 4: Step-type specific validation (25% of score)
-        # type_score = self._assess_step_type_quality(content, step.step_type)
-        # quality_score += type_score * 0.25
-        
-        # Step 5: Context relevance (25% of score)
-        # relevance_score = self._assess_context_relevance(content, context)
-        # quality_score += relevance_score * 0.25
-        
-        # Step 6: Apply validation level adjustments
-        # if step.validation_level == ValidationLevel.STRICT:
-        #     quality_score *= 0.9  # Higher standards
-        # elif step.validation_level == ValidationLevel.BASIC:
-        #     quality_score = min(quality_score * 1.1, 1.0)  # More lenient
-        
-        # return min(quality_score, 1.0)
+        word_count = len(content.split())
+        quality_score = 0.0
 
-        return 0.0  # Replace with your implementation
+        if word_count >= 100:
+            quality_score += 0.25
+        elif word_count >= 50:
+            quality_score += 0.15
+
+        structure_score = self._assess_content_structure(content, step.step_type)
+        quality_score += structure_score * 0.25
+
+        type_score = self._assess_step_type_quality(content, step.step_type)
+        quality_score += type_score * 0.25
+
+        relevance_score = self._assess_context_relevance(content, context)
+        quality_score += relevance_score * 0.25
+
+        if step.validation_level == ValidationLevel.STRICT:
+            quality_score *= 0.9
+        elif step.validation_level == ValidationLevel.BASIC:
+            quality_score = min(quality_score * 1.1, 1.0)
+
+        return min(quality_score, 1.0)
 
     def _assess_content_structure(self, content: str, step_type: ChainStepType) -> float:
         """Assess content structure and organization."""
-        # TODO: Implement structure assessment
-        # Check for: logical flow indicators, paragraphs, lists, organization
-        return 0.0
+        score = 0.0
+        if content.count("\n\n") >= 2:
+            score += 0.4
+        if any(marker in content for marker in ["- ", "* ", "1.", "2.", "3."]):
+            score += 0.3
+        flow_words = ["first", "second", "therefore", "however", "in conclusion", "additionally", "furthermore"]
+        if any(word in content.lower() for word in flow_words):
+            score += 0.3
+        return min(score, 1.0)
 
     def _assess_step_type_quality(self, content: str, step_type: ChainStepType) -> float:
         """Assess quality based on step type requirements."""
-        # TODO: Implement step-type specific quality assessment
-        # Different criteria for analysis, synthesis, evaluation, recommendation
-        return 0.0
+        keywords = {
+            ChainStepType.ANALYSIS: ["data", "trend", "metric", "growth", "market"],
+            ChainStepType.SYNTHESIS: ["overall", "comprehensive", "combining", "together", "integrate"],
+            ChainStepType.EVALUATION: ["risk", "opportunity", "strength", "weakness", "evaluate"],
+            ChainStepType.RECOMMENDATION: ["recommend", "suggest", "should", "strategy", "implement"],
+        }
+        content_lower = content.lower()
+        matches = sum(1 for kw in keywords.get(step_type, []) if kw in content_lower)
+        return min(matches / 3, 1.0)
 
     def _assess_context_relevance(self, content: str, context: ChainContext) -> float:
         """Assess how well content relates to the provided context."""
-        # TODO: Implement context relevance assessment
-        # Check for integration with previous insights and scenario relevance
-        return 0.0
+        score = 0.0
+        content_lower = content.lower()
+        if any(word in content_lower for word in context.initial_input.lower().split()):
+            score += 0.5
+        if context.accumulated_insights and any(
+            word in content_lower
+            for insight in context.accumulated_insights
+            for word in insight.lower().split()
+        ):
+            score += 0.5
+        return min(score, 1.0)
     
     def _extract_key_insights(self, content: str, step_type: ChainStepType) -> List[str]:
         """Extract key insights from step content."""
